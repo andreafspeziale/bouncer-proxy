@@ -1,0 +1,9 @@
+node_modules
+build
+config.js
+deploy.js
+coverage
+coverage.json
+scTopics
+*.log
+coverageEnv/
