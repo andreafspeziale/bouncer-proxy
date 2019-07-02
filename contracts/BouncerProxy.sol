@@ -11,7 +11,7 @@ contract BouncerProxy is Ownable {
   mapping(address => uint) public nonce;
 
   // allow for third party metatx account to make transactions through this
-  // contract like an identity but make sure the owner has whitelisted the tx
+  // contract like an identity but make sure the owner has whitelisted the account
   mapping(address => bool) public whitelist;
 
   // whitelist the deployer so they can whitelist others
@@ -19,24 +19,20 @@ contract BouncerProxy is Ownable {
     whitelist[msg.sender] = true;
   }
 
-  event UpdateWhitelist(address _account, bool _value);
-  event Received (address indexed sender, uint value);
-  // when some frontends see that a tx is made from a bouncerproxy, they may want to parse through these events to find out who the signer was etc
-  event Forwarded (
-    bytes sig,
-    address signer,
-    address destination,
-    uint value,
-    bytes data,
-    address rewardToken,
-    uint rewardAmount,
+  event LogUpdateWhitelist(address indexed _account, bool _value);
+
+  event LogTransactionForward(
+    bytes _signedHashedMessage,
+    address indexed _signer,
+    address indexed _recipient,
+    uint _transactionObjectValueField,
+    bytes _transactionObjectDataField,
+    address _rewardTokenAddress,
+    uint _rewardAmount,
     bytes32 _hash
   );
 
-  // copied from https://github.com/uport-project/uport-identity/blob/develop/contracts/Proxy.sol
-  function () external payable {
-    emit Received(msg.sender, msg.value);
-  }
+  function () external payable { }
 
   function updateWhitelist(
     address _account,
@@ -46,20 +42,18 @@ contract BouncerProxy is Ownable {
     onlyOwner
     returns (bool)
   {
-    // This allow every whitelisted address to whitelist someone
-    // require(whitelist[msg.sender],"BouncerProxy::updateWhitelist Account Not Whitelisted");
     whitelist[_account] = _value;
-    emit UpdateWhitelist(_account, _value);
+    emit LogUpdateWhitelist(_account, _value);
     return true;
   }
 
   function getHash(
-    address signer,
-    address destination,
-    uint value,
-    bytes memory data,
-    address rewardToken,
-    uint rewardAmount
+    address _signer,
+    address _recipient,
+    uint _transactionObjectValueField,
+    bytes memory _transactionObjectDataField,
+    address _rewardTokenAddress,
+    uint _rewardAmount
   )
     public
     view
@@ -68,59 +62,60 @@ contract BouncerProxy is Ownable {
     return keccak256(
       abi.encodePacked(
         address(this),
-        signer,
-        destination,
-        value,
-        data,
-        rewardToken,
-        rewardAmount,
-        nonce[signer]
+        _signer,
+        _recipient,
+        _transactionObjectValueField,
+        _transactionObjectDataField,
+        _rewardTokenAddress,
+        _rewardAmount,
+        nonce[_signer]
       )
     );
   }
 
   // original forward function copied from https://github.com/uport-project/uport-identity/blob/develop/contracts/Proxy.sol
   function forward(
-    bytes memory sig,
-    address signer,
-    address destination,
-    uint value,
-    bytes memory data,
-    address rewardToken,
-    uint rewardAmount
+    bytes memory _signedHashedMessage,
+    address _signer,
+    address _recipient,
+    uint _transactionObjectValueField,
+    bytes memory _transactionObjectDataField,
+    address _rewardTokenAddress,
+    uint _rewardAmount
   )
     public
     returns (bool)
   {
-    //the hash contains all of the information about the meta transaction to be called
-    bytes32 _hash = getHash(
-      signer,
-      destination,
-      value,
-      data,
-      rewardToken,
-      rewardAmount
+    bytes32 hashedMessage = getHash(
+      _signer,
+      _recipient,
+      _transactionObjectValueField,
+      _transactionObjectDataField,
+      _rewardTokenAddress,
+      _rewardAmount
     );
+
     //increment the nonce counter so this tx can't run again
-    nonce[signer] += 1;
+    nonce[_signer] += 1;
+
     //this makes sure signer signed correctly AND signer is a valid bouncer
     require(
-      signerIsWhitelisted(_hash, sig),
+      isSignerWhitelisted(hashedMessage, _signedHashedMessage),
       "fn: forward(), msg: forward Signer is not whitelisted"
     );
     // make sure the signer pays in whatever token (or ether) the sender and signer agreed to
     // or skip this if the sender is incentivized in other ways and there is no need for a token
-    if (rewardAmount > 0) {
+    if (_rewardAmount > 0) {
       // address 0 mean reward with ETH
-      if (rewardToken == address(0)){
+      if (_rewardTokenAddress == address(0)){
         // reward with ETH
-        msg.sender.transfer(rewardAmount);
+        msg.sender.transfer(_rewardAmount);
       } else {
         // reward token
         require(
-          rewardToken._safeTransfer(
+          _rewardTokenAddress._safeTransfer(
             msg.sender,
-            rewardAmount
+            _rewardAmount
           ),
           "fn: forward(), msg: token transfer failed"
         );
@@ -128,18 +123,18 @@ contract BouncerProxy is Ownable {
     }
     // execute the transaction with all the given parameters
     require(
-      executeCall(destination, value, data),
+      executeCall(_recipient, _transactionObjectValueField, _transactionObjectDataField),
       "fn: forward(), msg: executeCall() function failed"
     );
-    emit Forwarded(
-      sig,
-      signer,
-      destination,
-      value,
-      data,
-      rewardToken,
-      rewardAmount,
-      _hash
+    emit LogTransactionForward(
+      _signedHashedMessage,
+      _signer,
+      _recipient,
+      _transactionObjectValueField,
+      _transactionObjectDataField,
+      _rewardTokenAddress,
+      _rewardAmount,
+      hashedMessage
     );
 
     return true;
@@ -149,24 +144,24 @@ contract BouncerProxy is Ownable {
   // which was copied from GnosisSafe
   // https://github.com/gnosis/gnosis-safe-contracts/blob/master/contracts/GnosisSafe.sol
   function executeCall(
-    address to,
-    uint256 value,
-    bytes memory data
+    address _to,
+    uint256 _value,
+    bytes memory _data
   )
     internal
     returns (bool success)
   {
     // solium-disable-next-line security/no-inline-assembly
     assembly {
-       success := call(gas, to, value, add(data, 0x20), mload(data), 0, 0)
+       success := call(gas, _to, _value, add(_data, 0x20), mload(_data), 0, 0)
     }
   }
 
   //borrowed from OpenZeppelin's ESDA stuff:
   //https://github.com/OpenZeppelin/openzeppelin-solidity/blob/master/contracts/cryptography/ECDSA.sol
-  function signerIsWhitelisted(
-    bytes32 _hash,
-    bytes memory _signature
+  function isSignerWhitelisted(
+    bytes32 _hashedMessage,
+    bytes memory _signedHashedMessage
   )
     internal
     view
@@ -176,7 +171,7 @@ contract BouncerProxy is Ownable {
     bytes32 s;
     uint8 v;
     // Check the signature length
-    if (_signature.length != 65) {
+    if (_signedHashedMessage.length != 65) {
       return false;
     }
     // Divide the signature in r, s and v variables
@@ -184,9 +179,9 @@ contract BouncerProxy is Ownable {
     // currently is to use assembly.
     // solium-disable-next-line security/no-inline-assembly
     assembly {
-      r := mload(add(_signature, 32))
-      s := mload(add(_signature, 64))
-      v := byte(0, mload(add(_signature, 96)))
+      r := mload(add(_signedHashedMessage, 32))
+      s := mload(add(_signedHashedMessage, 64))
+      v := byte(0, mload(add(_signedHashedMessage, 96)))
     }
     // Version of signature should be 27 or 28, but 0 and 1 are also possible versions
     if (v < 27) {
@@ -198,7 +193,7 @@ contract BouncerProxy is Ownable {
     } else {
       // solium-disable-next-line arg-overflow
       return whitelist[ecrecover(
-        keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash)),
+        keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hashedMessage)),
         v, r, s
       )];
     }
