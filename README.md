@@ -1,6 +1,5 @@
 # BouncerProxy contract
 > "With economic incentive" for miners.
-Bouncer identity proxy smart contract that executes meta transactions for etherless accounts.
 
 A way for etherless accounts to transact with the blockchain through an identity proxy without paying any gas.
 
