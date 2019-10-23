@@ -33,14 +33,14 @@
     "openzeppelin-solidity": "2.3"
   },
   "devDependencies": {
-    "babel-eslint": "^10.0.1",
-    "eslint": "^4.19.1",
-    "eslint-config-airbnb-base": "^13.0.0",
-    "eslint-plugin-import": "^2.13.0",
-    "eth-gas-reporter": "^0.1.10",
+    "babel-eslint": "^10.0.3",
+    "eslint": "^6.5.1",
+    "eslint-config-airbnb-base": "^14.0.0",
+    "eslint-plugin-import": "^2.18.2",
+    "eth-gas-reporter": "^0.2.2",
     "ganache-cli": "6.4.3",
-    "solidity-coverage": "^0.5.11",
-    "solium": "^1.1.8",
+    "solidity-coverage": "^0.6.4",
+    "solium": "^1.2.5",
     "truffle": "5.0.17",
     "truffle-flattener": "^1.2.8"
   }
